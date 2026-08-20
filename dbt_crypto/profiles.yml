@@ -1,0 +1,10 @@
+﻿crypto_dbt:
+
+  target: dev
+
+  outputs:
+
+    dev:
+      type: duckdb
+      path: ../data/crypto.duckdb
+      threads: 4

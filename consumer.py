@@ -1,20 +1,35 @@
 ﻿import json
-import os
 from datetime import datetime
+from pathlib import Path
 
 import duckdb
 from kafka import KafkaConsumer
 
 
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 KAFKA_TOPIC = "crypto-trades"
-DB_PATH = "data/crypto.duckdb"
+CONSUMER_GROUP = "duckdb-consumer-v2"
 
+
+# Project root = folder containing consumer.py
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+DATA_DIR = PROJECT_ROOT / "data"
+DB_PATH = DATA_DIR / "crypto.duckdb"
+
+
+# ============================================================
+# DATABASE
+# ============================================================
 
 def init_database():
-    os.makedirs("data", exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    conn = duckdb.connect(DB_PATH)
+    conn = duckdb.connect(str(DB_PATH))
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS raw_crypto_trades (
@@ -29,15 +44,24 @@ def init_database():
     conn.close()
 
 
+# ============================================================
+# CONSUMER
+# ============================================================
+
 def main():
+
     init_database()
 
-    conn = duckdb.connect(DB_PATH)
+    print(f"[CONSUMER] Database: {DB_PATH}")
+    print(f"[CONSUMER] Kafka: {KAFKA_BOOTSTRAP_SERVERS}")
+    print(f"[CONSUMER] Topic: {KAFKA_TOPIC}")
+
+    conn = duckdb.connect(str(DB_PATH))
 
     consumer = KafkaConsumer(
         KAFKA_TOPIC,
         bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        group_id="duckdb-consumer-v2",
+        group_id=CONSUMER_GROUP,
         auto_offset_reset="earliest",
         enable_auto_commit=True,
         value_deserializer=lambda value: json.loads(
@@ -49,7 +73,9 @@ def main():
     print("[CONSUMER] Waiting for messages...")
 
     try:
+
         for message in consumer:
+
             trade = message.value
 
             timestamp = datetime.fromtimestamp(
@@ -70,21 +96,29 @@ def main():
                 ],
             )
 
-        print(
-            f"[CONSUMER] Saved | "
-            f"{trade['symbol']} | "
-            f"price={trade['price']} | "
-            f"qty={trade['quantity']} | "
-            f"trade_id={trade['trade_id']}"
-        )
+            print(
+                f"[CONSUMER] Saved | "
+                f"{trade['symbol']} | "
+                f"price={trade['price']} | "
+                f"qty={trade['quantity']} | "
+                f"trade_id={trade['trade_id']}"
+            )
 
     except KeyboardInterrupt:
+
         print("\n[CONSUMER] Stopping...")
 
     finally:
+
         conn.close()
         consumer.close()
 
+        print("[CONSUMER] Closed.")
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
 
 if __name__ == "__main__":
     main()
